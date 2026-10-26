@@ -871,42 +871,45 @@ html { scroll-behavior: smooth; }
   });
 
   /* Formulario de pedido y contacto */
-  $('#oTone').innerHTML = SHADES.map(function (s) { return '<option value="' + s.id + '">' + s.name + ' · ' + money(s.price) + '</option>'; }).join('');
-  function orderLine() {
-    var s = byId($('#oTone').value), q = Math.max(1, Math.min(99, parseInt($('#oQty').value, 10) || 1));
-    return { s: s, q: q, total: s.price * q };
-  }
-  function syncOrder() {
-    var pedido = $('#oKind').value === 'pedido', o = orderLine();
-    $('#orderFields').hidden = !pedido;
-    $('#oSubmit').textContent = pedido ? 'Enviar pedido' : 'Enviar consulta';
-    $('#oSummary').textContent = pedido
-      ? o.q + ' × ' + o.s.name + ' = ' + money(o.total) + (o.total >= 35 ? ' · envío gratis' : ' · más envío')
-      : 'Te respondemos en menos de 24 horas.';
-  }
-  ['oKind', 'oTone', 'oQty'].forEach(function (id) {
-    $('#' + id).addEventListener('input', syncOrder);
-    $('#' + id).addEventListener('change', syncOrder);
-  });
-  $('#orderForm').addEventListener('submit', function (e) {
-    e.preventDefault();
-    var m = $('#oMsg'), name = $('#oName').value.trim(), phone = $('#oPhone').value.replace(/\D/g, ''), mail = $('#oEmail').value.trim();
-    var mailOk = /^\S+@\S+\.\S+$/.test(mail), phoneOk = phone.length >= 7;
-    m.className = 'msg full err';
-    if (!name) { m.textContent = 'Escribe tu nombre para poder responderte.'; $('#oName').focus(); return; }
-    if (!phoneOk && !mailOk) { m.textContent = 'Déjanos un WhatsApp o un correo válido para contactarte.'; $('#oPhone').focus(); return; }
-    var pedido = $('#oKind').value === 'pedido', o = orderLine();
-    m.className = 'msg full';
-    m.textContent = (pedido
-      ? 'Gracias, ' + name + '. Recibimos tu pedido de ' + o.q + ' × ' + o.s.name + ' por ' + money(o.total) + '.'
-      : 'Gracias, ' + name + '. Recibimos tu consulta.') +
-      ' Esto es una demostración: no se envió nada.';
-    toast(pedido ? 'Pedido de ejemplo registrado' : 'Consulta de ejemplo registrada');
-  });
-  syncOrder();
+  var SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzJ-GdSCCKtF3gC5wKPfQhEIiKJt9e9ah4FiqWy717_6eA-Ol6v8ZhIG3606bZVfO-nYQ/exec';
 
-  lipTexture(); renderSwatches(); renderChips(); renderGrid(); renderBag(); setCurrent(SHADES[0]);
-})();
-</script>
+$('#orderForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var m = $('#oMsg'), name = $('#oName').value.trim(), phone = $('#oPhone').value.replace(/\D/g, ''), mail = $('#oEmail').value.trim();
+  var mailOk = /^\S+@\S+\.\S+$/.test(mail), phoneOk = phone.length >= 7;
+  m.className = 'msg full err';
+  if (!name) { m.textContent = 'Escribe tu nombre para poder responderte.'; $('#oName').focus(); return; }
+  if (!phoneOk && !mailOk) { m.textContent = 'Déjanos un WhatsApp o un correo válido para contactarte.'; $('#oPhone').focus(); return; }
 
-</body></html>
+  var pedido = $('#oKind').value === 'pedido', o = orderLine();
+  var btn = $('#oSubmit'); btn.disabled = true; btn.textContent = 'Enviando…';
+  m.className = 'msg full'; m.textContent = '';
+
+  var body = new URLSearchParams({
+    tipo: pedido ? 'Pedido' : 'Consulta',
+    nombre: name,
+    whatsapp: $('#oPhone').value.trim(),
+    correo: mail,
+    ciudad: $('#oCity').value.trim(),
+    tono: pedido ? o.s.name : '',
+    cantidad: pedido ? o.q : '',
+    total: pedido ? o.total.toFixed(2) : '',
+    mensaje: $('#oNotes').value.trim()
+  });
+
+  fetch(SHEETS_URL, { method: 'POST', body: body })
+    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      if (!r.ok) throw new Error(r.error);
+      m.textContent = pedido
+        ? 'Gracias, ' + name + '. Recibimos tu pedido de ' + o.q + ' × ' + o.s.name + ' por ' + money(o.total) + '.'
+        : 'Gracias, ' + name + '. Recibimos tu consulta.';
+      toast(pedido ? 'Pedido enviado' : 'Consulta enviada');
+      $('#orderForm').reset(); $('#oKind').value = pedido ? 'pedido' : 'consulta';
+    })
+    .catch(function () {
+      m.className = 'msg full err';
+      m.textContent = 'No se pudo enviar. Inténtalo de nuevo en un momento.';
+    })
+    .then(function () { btn.disabled = false; syncOrder(); });
+});
